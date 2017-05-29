@@ -1,1 +1,1 @@
-Welcome to the todomvc wiki!
+Welcome to the Precept wiki!
