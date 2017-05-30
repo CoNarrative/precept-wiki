@@ -1,6 +1,4 @@
-## What's pattern matching?
-
-You might initially approach pattern matching as code that resembles the data it represents.
+If you're not coming from a language that allows pattern matching, you might initially approach it as code that resembles the data it represents.
 
 In our case, our pattern matching syntax is nearly identical to our data structures. This allows values to be extracted and matched according to their position in the data structure.
 
