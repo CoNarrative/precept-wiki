@@ -25,6 +25,7 @@ Here are some patterns we ourselves use that we hope will help you get started:
     Otherwise, it would persist, and the same consequence would happen the next time the rules fire.
     In other rules libraries, `insert!` is known as "insert logical". 
     You can read more about the differences between Clara's `insert!` and `insert-unconditional!` [here](http://www.clara-rules.org/docs/truthmaint/).
+    
     There are multiple ways to retract action facts. 
     Our preferred method is to use the entity id `:transient` for any fact that is an event or action and should only survive only one session. 
     Precept removes all facts with this eid at the end of every session. 
@@ -120,8 +121,8 @@ Side-effects are handled the same way -- watch for the right pattern coming thro
   [[?e :todo/done true]]
   [(<- ?done-entity (entity ?e))]
   =>
-  (retract! ?done-entity))
-  #make API call here...will be triggered for each retracted fact
+  (retract! ?done-entity)
+  (api/clear-completed))
 ```
 
 Note that we don't feel the need to artificially separate out mutations from side-effects into different rules when the rule conditions would be the same - that's your call.
@@ -132,9 +133,9 @@ Here's an example where we notify the server on any clear-completed command (to 
 ```clj
 (rule notify-server-on-clear-completed
   {:group :action}
-  [[_ :mark-all-done]]
+  [[_ :clear-completed]]
   =>
-  ; make API call here...
+  (api/clear-completed))
 ```
 
 ```clj
@@ -175,7 +176,7 @@ Derived state (by necessity) is only expressible within the consequence of a rul
   (insert! [?e :todo/visible true]))
 ```
 
-`define` can be a more concise/explanatory way to do the same thing Note it is defined by its consequence; conditions are second:
+`define` can be a more concise & explanatory way to do the same thing. It does away with the rule name and is instead defined by its consequence. The ordinary rule order is therefore flipped; conditions are second:
 
 ```clj
 (define [?e :todo/visible true] :-
@@ -184,7 +185,7 @@ Derived state (by necessity) is only expressible within the consequence of a rul
        [:and [_ :visibility-filter :active] [?e :todo/done false]]])
 ```
 
-This is also equivalent:
+This is also (mostly) equivalent:
 ```clj
 (define [?e :todo/visible true] :- [[_ :visibility-filter :all] [?e :todo/title]])
 
