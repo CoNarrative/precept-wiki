@@ -9,14 +9,14 @@ Here are some patterns we ourselves use that we hope will help you get started:
 ## A single state transition
 
 
- 1. *A state transition begins when a new fact is inserted from outside the rule context using `then`.*
+ 1. **A state transition begins when a new fact is inserted from outside the rule context using `then`.**
     `then` is equivalent to the consequence of a rule. Here, the condition, or "when", is typically some kind of event: things like an `:on-click`, a REST response, or a message from the server. 
     Ultimately, `then` inserts new facts into the session and fires your rules. It does have one special characteristic: It queues the `insert` for the next session firing. 
     This means that when you use it to insert facts within the consequence of a rule, your rules won't know about what you inserted until the next go around. By contrast, `insert-unconditional!` would do the exact same thing as `then` in this case except rules will be able to respond to the fact you inserted immediately.
     
     In other frameworks, `then` may be called `dispatch`. It is perfectly reasonable to think about `then` as a version of that.
 
- 2. *Rules with `{:group :action}` as their first argument may be used to "intercept" any new fact entering the session.*
+ 2. **Rules with `{:group :action}` as their first argument may be used to "intercept" any new fact entering the session.**
     Rules in the `:action` group are given first priority to respond to new facts. We use such rules as "action handlers" to intercept and respond to facts inserted from outside the session by `then`. Rules in this group may do the same with facts inserted from inside the session by lower priority rules, though we do not generally recommend this. 
     Apart from their high salience, `{:group :action}` rules are like any other: They may retract facts, insert facts, and/or fire side-effects. 
 
@@ -25,27 +25,29 @@ Here are some patterns we ourselves use that we hope will help you get started:
     Otherwise, it would persist, and the same consequence would happen the next time the rules fire.
     In other rules libraries, `insert!` is known as "insert logical". 
     You can read more about the differences between Clara's `insert!` and `insert-unconditional!` [here](http://www.clara-rules.org/docs/truthmaint/).
+    
     There are multiple ways to retract action facts. 
     Our preferred method is to use the entity id `:transient` for any fact that is an event or action and should only survive only one session. 
     Precept removes all facts with this eid at the end of every session. 
     You may implement your own equivalent "cleanup" rules that are given the lowest priority and fire at the end of the session by using `{:group :cleanup}`.
     You may also retract the fact that represents the action or message from within the action handler itself. 
 
- 3. *Other rules fire and update "derived" state.*
+ 3. **Other rules fire and update "derived" state.**
     Rules have the default precedence level of `:calc`. These are not as active as "action" group rules. Most rules fall into this category because 
     they take the "base" facts (inserted from the outside world, or via an action handler), and derive other facts from them.
 
- 4. *Subscription rules gather facts to be consumed by the view.* 
-    Subscription handlers receive lowest priority typically fire once all derived calculations have been performed. 
+ 4. **Subscription rules gather facts to be consumed by the view.**
+    Subscription handlers receive lowest priority and typically fire once all derived calculations have been performed. Subscriptions are defined using `defsub`. Its name corresponds to the keyword for the subscription it fulfills (e.g. `(defsub :my-subscription ...)`). It returns a map as its consequence that may contain bound variables for the result of the subscription.
 
- 5. *View model updates*. 
+ 5. **The view model updates.** 
     When the rules are done firing, Precept updates the reactive view model with the subscription results and all other facts in the session
 
- 6. *Components update*
+ 6. **Subscribed components rerender if a query they subscribe to produced a new result.**
     Components update through named subscriptions. 
     A subscription is simply a Reagent cursor/lens that watches the subscription's location on a Reagent atom for changes.
     The format for a subscription follows `re-frame`'s syntax: `@(subscribe [:my-subscription])`. 
     Precept has no parameterized subscriptions. The vector around `:my-subscription` is unnecessary now but may help support this in the future.
+    Subscriptions are defined with `defsub` as mentioned above.
 
 ## Redux actions vs. inserting facts vs. inserting `:transient` facts
 Transient facts act like an event, action, or message in frameworks like Redux and re-frame. 
@@ -120,8 +122,8 @@ Side-effects are handled the same way -- watch for the right pattern coming thro
   [[?e :todo/done true]]
   [(<- ?done-entity (entity ?e))]
   =>
-  (retract! ?done-entity))
-  #make API call here...will be triggered for each retracted fact
+  (retract! ?done-entity)
+  (api/clear-completed))
 ```
 
 Note that we don't feel the need to artificially separate out mutations from side-effects into different rules when the rule conditions would be the same - that's your call.
@@ -132,9 +134,9 @@ Here's an example where we notify the server on any clear-completed command (to 
 ```clj
 (rule notify-server-on-clear-completed
   {:group :action}
-  [[_ :mark-all-done]]
+  [[_ :clear-completed]]
   =>
-  ; make API call here...
+  (api/clear-completed))
 ```
 
 ```clj
@@ -148,7 +150,7 @@ Here's an example where we notify the server on any clear-completed command (to 
   (retract! ?done-entity))
 ```
 
-There is nothing stopping you from triggering a side-effect from a derived calculation either - you just might want to insert a new :transient action and let it go through a pipeline though to keep things clear.
+There is nothing stopping you from triggering a side-effect from a derived calculation either — you just might want to insert a new `:transient` action and let it go through a pipeline though to keep things clear.
 
 ## Backend
 We're agnostic on back-end data and communications except for always using rules to manage them.
@@ -158,8 +160,18 @@ If we are handling a REST callback, we might do some pre-processing of the data 
 We'll insert into the session what we need to handle the response via rules just as if it were a normal action - the status code, the data, etc.
 
 Example:
-
-
+```clj
+(rule insert-on-rest-response
+ [[_ :clear-cart]]
+ =>
+ (api/clear-cart 
+  {:handler #(then [:transient :cart-cleared? true])
+   :error-handler (fn [res] 
+                   (then [:transient :cart-cleared? false]
+                         [:transient :server/response-code (:status res))
+                         [:transient :server/message (:message res))]))})
+                         
+```
 
 ## Derived calcuations
 The beauty of the rule engine is that it keeps all your derived logic efficiently updated.
@@ -175,7 +187,7 @@ Derived state (by necessity) is only expressible within the consequence of a rul
   (insert! [?e :todo/visible true]))
 ```
 
-`define` can be a more concise/explanatory way to do the same thing Note it is defined by its consequence; conditions are second:
+`define` can be a more concise and explanatory way to do the same thing. It does away with the rule name and is instead defined by its consequence. The ordinary rule order is therefore flipped; conditions are second:
 
 ```clj
 (define [?e :todo/visible true] :-
@@ -184,7 +196,7 @@ Derived state (by necessity) is only expressible within the consequence of a rul
        [:and [_ :visibility-filter :active] [?e :todo/done false]]])
 ```
 
-This is also equivalent:
+Because the `:visibility-filter` happens to be mutually exclusive, this is also equivalent:
 ```clj
 (define [?e :todo/visible true] :- [[_ :visibility-filter :all] [?e :todo/title]])
 
